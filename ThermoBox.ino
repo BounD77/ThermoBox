@@ -13,7 +13,7 @@
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 //#define DHTTYPE DHT21   // DHT 21 (AM2301)
 
-#define DEBUGMODE 1  // после окончания отладки закомментируем
+//#define DEBUGMODE 1  // после окончания отладки закомментируем - yf nhtnm vtymit gfvznb
 
 #define KEYSELECT 5  //соответствия клавишей 
 #define KEYLEFT 4
@@ -117,10 +117,10 @@ void setup () {
 #if defined(__LGT8F__) // если wavgat
   analogReadResolution(10);
 #endif
-analogReference(DEFAULT);
-pinMode(A0, INPUT_PULLUP); // подтягиваем, иначе часть кнопок на шилде не работают
-//analog
-   TCCR2B = TCCR2B & 0b11111000 | 0x07; // устанавливаем частоту шим на 3 и 11 ноге в 4кГц
+  analogReference(DEFAULT);
+  pinMode(A0, INPUT_PULLUP); // подтягиваем, иначе часть кнопок на шилде не работают
+  //analog
+  TCCR2B = TCCR2B & 0b11111000 | 0x07; // устанавливаем частоту шим на 3 и 11 ноге в 4кГц
   // TCCR2B = TCCR2B & 0b11111000 | 0x02; // 32 кГц - не устанавливать
   // set up the LCD's number of columns and rows:
   lcd.begin(16, 2);
