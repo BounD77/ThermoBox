@@ -80,7 +80,7 @@ bool flagResetEEPROM = false; // флаг сброса памяти
 byte mi = 0;
 byte minTimeOnOff = 5; // время задержки между переключениями реле холодильника, 5 мин
 byte minTimeOnOffMin = 0;
-byte minTimeOnOffMax = 10;
+byte minTimeOnOffMax = 20;
 
 bool enabledRelayOnOff = true; //разрешено ли щелкать реле
 bool isRelayOn = false; // включено ли реле
@@ -125,8 +125,9 @@ LiquidCrystal lcd(8, 9, 4, 5, 6, 7 );//For LCD Keypad Shield
 //int pushedButton; // нажатая кнопка
 bool tempOut = false; // временная переменная для тестирвоания, убрать потом!
 
-void setup () {
 
+
+void setup () {
 #if defined(__LGT8FX8E__) // 
   analogReadResolution(10);
 #endif
@@ -143,9 +144,9 @@ void setup () {
   Serial.println("Debug begin!");
 #endif
 
-  pinMode(pinRelay, OUTPUT); // Объявляем пин реле как выход
-  digitalWrite(pinRelay, HIGH); // Выключаем реле - посылаем высокий сигнал
-  
+   pinMode(pinRelay, OUTPUT); // Объявляем пин реле как выход
+  // digitalWrite(pinRelay, HIGH); // Выключаем реле - посылаем высокий сигнал
+
   dht.begin();
   readSensors.start();
   minOnOff.start();
@@ -378,13 +379,12 @@ void loop() {
 #endif
     }
   }
-  //minOnOff.read(minTimeOnOff * 60000); // проверяем не часто ли щелкаем реле
-  minOnOff.read(minTimeOnOff * 2 * 1000); // проверяем не часто ли щелкаем реле 10 секунд тест
+  minOnOff.read((unsigned long) minTimeOnOff * 60000); // проверяем не часто ли щелкаем реле
+  //minOnOff.read(minTimeOnOff * 2 * 1000); // проверяем не часто ли щелкаем реле 10 секунд тест
   if (minOnOff.tick) { // тикнуло 5 минут, можно щелкать реле
     enabledRelayOnOff = true;
   }
   readSensors.read(2500); //каждые 2.5 секунды снимает показания датчиков и обновляем экран (на 2 секунды проверка в библиотеке DHT, поэтму чуть больше)
-  //nD_02.read(3200); // временно моргаем мощностями вентиляторов на экране
 
   if (readSensors.tick && !innerMenu) { // тикнуло 2,5 секунды и мы не в меню,  пора считывать и выводить данные
     float curHumidity = dht.readHumidity(); //считали влажность
@@ -395,7 +395,9 @@ void loop() {
 #ifdef DEBUGMODE
       Serial.println("Failed to read from DHT sensor!");
 #endif
-      lcd.print ("Failed to read from DHT sensor!");
+      lcd.print (" Failed to read");
+      lcd.setCursor(0, 1);
+      lcd.print ("from DHT sensor!");
       return;
     }
     lcd.print ("Temp:"); //выводим все данные
@@ -414,7 +416,7 @@ void loop() {
       lcd.print("OFF  ");
     }
     else {
-      analogWrite(pinPWMFan, map(fanSpeedCurrent, 0, 10, 10, 255));
+      analogWrite(pinPWMFan, map(fanSpeedCurrent, 0, 10, 20, 255));
       // выводим в правой части мощности работающих вентиляторов
       lcd.setCursor(11, 0);
       for (int i = 1; i <= fanSpeedCurrent / 2; i++) {
@@ -429,10 +431,10 @@ void loop() {
 
     }
     // испарителя
-    if ((float) curHumidity > destHumi + hystHumi / 2.0) { // если влажность повысилась выключаем койл
+    if ((float) curHumidity > (destHumi + hystHumi / 2.0)) { // если влажность повысилась выключаем койл
       coilSpeedOn = false;
     }
-    if ((float) curHumidity < destHumi - hystHumi / 2.0) { // если влажность понизилась включаем койл
+    if ((float) curHumidity < (destHumi - hystHumi / 2.0)) { // если влажность понизилась включаем койл
       coilSpeedOn = true;
     }
     if (coilSpeedCurrent == 0 || !coilSpeedOn) {
@@ -441,7 +443,7 @@ void loop() {
       lcd.print("OFF  ");
     }
     else {
-      analogWrite(pinPWMCoil, map(coilSpeedCurrent, 0, 10, 10, 255));
+      analogWrite(pinPWMCoil, map(coilSpeedCurrent, 0, 10, 0, 255));
       // выводим в правой части мощности работающих вентиляторов
       lcd.setCursor(11, 1);
       for (int i = 1; i <= coilSpeedCurrent / 2; i++) {
@@ -461,28 +463,25 @@ void loop() {
     //   if (!enabledRelayOnOff) { // если задержка напечатаем решетку
     //     lcd.print("#");
     //   }
-    if ( curTemp > destTemp + hystTemp / 2.0 && enabledRelayOnOff) { // если температура повысилась включаем реле
+    // if ( (float) curTemp > (destTemp + hystTemp / 2.0) && enabledRelayOnOff) { // если температура повысилась включаем реле
+    if ( (float) curTemp > (destTemp + hystTemp / 2.0) ) { // если температура повысилась включаем реле
 
-      enabledRelayOnOff = false;
+      //enabledRelayOnOff = false;
       isRelayOn = true;
-      digitalWrite(pinRelay, LOW); // включение в LOW
+      digitalWrite(pinRelay, HIGH); // включение в ???
       lcd.setCursor(10, 0);
       lcd.print("+");
     }
-    if ((float) curTemp < destTemp - hystTemp / 2.0 && enabledRelayOnOff) { // если температура низкая выключаем холодильник
-      enabledRelayOnOff = false;
-      digitalWrite(pinRelay, HIGH);
+    // if ((float) curTemp < (destTemp - hystTemp / 2.0) && enabledRelayOnOff) { // если температура низкая выключаем холодильник
+    if ((float) curTemp < (destTemp - hystTemp / 2.0)) { // если температура низкая выключаем холодильник
+      //enabledRelayOnOff = false;
+      digitalWrite(pinRelay, LOW);
       isRelayOn = false;
       lcd.setCursor(10, 0);
       lcd.print("-");
     }
-
   }
-
-
 }
-
-
 
 int GetKeyValue() {         // Функция устраняющая дребезг
   static int   count;
@@ -516,7 +515,7 @@ int GetKeyValue() {         // Функция устраняющая дребе�
 
 int GetButtonNumberByValue(int value) {   // Новая функция по преобразованию кода нажатой кнопки в её номер
 #ifdef DEBUGMODE
-   //Serial.println(value); // раскомментируйте для замера аналоговой величины кнопок 
+  //Serial.println(value); // раскомментируйте для замера аналоговой величины кнопок
 #endif
   // аналоговые соответствия кнопок, не нажато 0, RIGHT 1, UP 2, DOWN 3, LEFT 4, SELECT 5
   int values[6] = {1315, 0, 196, 454, 705, 992}; // для WAVGAT
