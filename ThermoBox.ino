@@ -73,13 +73,13 @@ int keyValue  =  0; // Состояние покоя
 bool innerMenu = false; // признак нахождения в меню, не выводим основной экран
 byte itemMenu = 1; //номер пункта меню при движении
 byte timeToExitMenu = 7 ; //время по неактивности кнопок выход из меню в основной экран (10 сек)
-byte timeToExitMenuMin = 2 ;
+byte timeToExitMenuMin = 1 ;
 byte timeToExitMenuMax = 15 ;
 bool flagAutoSave = false; //автосохранение в EEPROM после выхода по таймауту из меню, без SELECT, не думаю что хорошая идея, но вдруг...
 bool flagResetEEPROM = false; // флаг сброса памяти
 byte mi = 0;
 byte minTimeOnOff = 5; // время задержки между переключениями реле холодильника, 5 мин
-byte minTimeOnOffMin = 1;
+byte minTimeOnOffMin = 0;
 byte minTimeOnOffMax = 10;
 
 bool enabledRelayOnOff = true; //разрешено ли щелкать реле
@@ -143,7 +143,9 @@ void setup () {
   Serial.println("Debug begin!");
 #endif
 
-
+  pinMode(pinRelay, OUTPUT); // Объявляем пин реле как выход
+  digitalWrite(pinRelay, HIGH); // Выключаем реле - посылаем высокий сигнал
+  
   dht.begin();
   readSensors.start();
   minOnOff.start();
