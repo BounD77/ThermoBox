@@ -115,10 +115,9 @@ byte symbolHalf[8] =
 };
 
 
-noDELAY readSensors;
-noDELAY minOnOff;
-//noDELAY nD_02;
-noDELAY exitMenu;
+noDELAY readSensors; // таймер чтения сенсора
+noDELAY minOnOff;    // таймер минимального щелкания реле
+noDELAY exitMenu;    // таймер выхода из меню
 
 DHT dht(DHTPIN, DHTTYPE);
 LiquidCrystal lcd(8, 9, 4, 5, 6, 7 );//For LCD Keypad Shield
@@ -150,7 +149,6 @@ void setup () {
   dht.begin();
   readSensors.start();
   minOnOff.start();
-  // nD_02.start();
   // exitMenu.start()
   lcd.createChar(1, symbolFull);
   lcd.createChar(2, symbolHalf);
@@ -379,10 +377,12 @@ void loop() {
 #endif
     }
   }
+  
   minOnOff.read((unsigned long) minTimeOnOff * 60000); // проверяем не часто ли щелкаем реле
   //minOnOff.read(minTimeOnOff * 2 * 1000); // проверяем не часто ли щелкаем реле 10 секунд тест
   if (minOnOff.tick) { // тикнуло 5 минут, можно щелкать реле
     enabledRelayOnOff = true;
+    minOnOff.stop();
   }
   readSensors.read(2500); //каждые 2.5 секунды снимает показания датчиков и обновляем экран (на 2 секунды проверка в библиотеке DHT, поэтму чуть больше)
 
@@ -460,23 +460,26 @@ void loop() {
 
     // реле включения холодильника
 
-    //   if (!enabledRelayOnOff) { // если задержка напечатаем решетку
-    //     lcd.print("#");
-    //   }
-    // if ( (float) curTemp > (destTemp + hystTemp / 2.0) && enabledRelayOnOff) { // если температура повысилась включаем реле
-    if ( (float) curTemp > (destTemp + hystTemp / 2.0) ) { // если температура повысилась включаем реле
+       if (!enabledRelayOnOff) { // если задержка напечатаем решетку
+      lcd.setCursor(10, 0);
+         lcd.print("#");
+       }
+     if ( (float) curTemp > (destTemp + hystTemp / 2.0) && enabledRelayOnOff) { // если температура повысилась включаем реле
+    //if ( (float) curTemp > (destTemp + hystTemp / 2.0) ) { // если температура повысилась включаем реле
 
-      //enabledRelayOnOff = false;
+      enabledRelayOnOff = false;
       isRelayOn = true;
+      minOnOff.start();
       digitalWrite(pinRelay, HIGH); // включение в ???
       lcd.setCursor(10, 0);
       lcd.print("+");
     }
-    // if ((float) curTemp < (destTemp - hystTemp / 2.0) && enabledRelayOnOff) { // если температура низкая выключаем холодильник
-    if ((float) curTemp < (destTemp - hystTemp / 2.0)) { // если температура низкая выключаем холодильник
-      //enabledRelayOnOff = false;
+     if ((float) curTemp < (destTemp - hystTemp / 2.0) && enabledRelayOnOff) { // если температура низкая выключаем холодильник
+    //if ((float) curTemp < (destTemp - hystTemp / 2.0)) { // если температура низкая выключаем холодильник
+      enabledRelayOnOff = false;
       digitalWrite(pinRelay, LOW);
       isRelayOn = false;
+      minOnOff.start();
       lcd.setCursor(10, 0);
       lcd.print("-");
     }
