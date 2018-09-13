@@ -1,6 +1,6 @@
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // проект термошкафа из холодильника. датчик AM2302, 2 вентилятора подключены через ШИМ, Холодильник питается через реле
-#define DHTPIN 2     // what digital pin we're connected to
+
 #define EEPROMLEN 19 //количество байт, хранящихся в EEPROM, следующим хранится CRC
 // Uncomment whatever type you're using!
 //#define DHTTYPE DHT11   // DHT 11
@@ -18,9 +18,9 @@
 #define KEYDOWN 3
 #define KEYRIGHT 1
 
-
+#define DHTPIN      2     // what digital pin we're connected to
 #define PININ      A0 // аналоговый порт кнопок
-#define PINRELAY   13 //реле включения холодильника нормально включено
+#define PINRELAY   12 //реле включения холодильника нормально включено
 #define PINPWMFAN   3 //порт нижнего вентилятора
 #define PINPWMCOIL 11 //порт вентилятора испарителя
 
@@ -58,8 +58,9 @@ byte coilSpeedCurrent = 7; //рабочая скорость
 byte coilSpeedMin = 1; //максимальная скорость
 byte coilSpeedMax = 10; //максимальная скорость
 bool coilSpeedOn = true; //флаг включено вентилятора испарителя
+bool firstLoop = true; //флаг первого запуска
 
-float destTemp = 27.0; // поддеживаемая температура
+float destTemp = 12.0; // поддеживаемая температура
 float destTempMin = 3.0;
 float destTempMax = 30.0;
 
@@ -80,7 +81,7 @@ bool innerMenu = false; // признак нахождения в меню, не
 byte itemMenu = 1; //номер пункта меню при движении
 int timeToExitMenu = 4 * 1000; //время по неактивности кнопок выход из меню в основной экран (10 сек)
 byte mi = 0;
-byte minTimeOnOff = 3; // время задержки между переключениями реле холодильника, 5 мин
+byte minTimeOnOff = 5; // время задержки между переключениями реле холодильника, 5 мин
 byte minTimeOnOffMin = 1;
 byte minTimeOnOffMax = 20;
 
@@ -190,7 +191,7 @@ void loop() {
   if (exitMenu.tick && innerMenu) { // если таймаут
     // не забыть сделать пункт автосохранение
     innerMenu = false;
-
+firstLoop = true;
     exitMenu.stop(); // останавливаем счетчик простоя
     lcd.clear();
   }
@@ -339,7 +340,7 @@ void loop() {
             break;
           case KEYSELECT: // запоминаем значение в EEPROM и выходим на главный экран
             EepromUpdateAll();
-
+firstLoop = true;
             innerMenu = false;
             exitMenu.stop(); // останавливаем счетчик простоя
             lcd.clear();
@@ -397,6 +398,19 @@ void loop() {
     lcd.print (curHumidity, 1);
     lcd.print ("%");
 
+    lcd.setCursor(10, 0);
+    if (firstLoop) { // если первый проход по экарну вначале или после меню пририсовываем состояние реле
+    if (enabledRelayOnOff) {
+      
+      if (isRelayOn)  lcd.print("+");
+      else            lcd.print("-");
+      firstLoop = false;
+    }
+    else              lcd.print("#");
+    }
+
+
+
     //включаем/выключаем вентиляторы
     // нижний (всегда работает
     if (fanSpeedCurrent == 0 || !fanSpeedOn) {
@@ -420,10 +434,10 @@ void loop() {
 
     }
     // испарителя
-    if ((float) curHumidity > destHumi + hystHumi / 2.0) { // если влажность повысилась выключаем койл
+    if ((float) curHumidity > (destHumi + hystHumi / 2.0)) { // если влажность повысилась выключаем койл
       coilSpeedOn = false;
     }
-    if ((float) curHumidity < destHumi - hystHumi / 2.0) { // если влажность понизилась включаем койл
+    if ((float) curHumidity < (destHumi - hystHumi / 2.0)) { // если влажность понизилась включаем койл
       coilSpeedOn = true;
     }
     if (coilSpeedCurrent == 0 || !coilSpeedOn) {
@@ -464,12 +478,12 @@ void loop() {
 #endif
       }
       else { // если задержка напечатаем решетку
-        lcd.setCursor(10, 0);  
+        lcd.setCursor(10, 0);
         lcd.print("#");
 #ifdef DEBUGMODE
         Serial.println("enabledRelayOnOff = false, Relay not work! HIGH"); // отладка
 #endif
-      } 
+      }
     }
 
     if ( curTemp < (destTemp - hystTemp / 2.0) && isRelayOn) { // если температура низкая и реле включено выключаем холодильник
