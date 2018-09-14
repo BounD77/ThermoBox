@@ -68,7 +68,7 @@ float hystTemp = 2.0; // температурный гистерезис
 float hystTempMin = 0.3;
 float hystTempMax = 4.0;
 
-float destHumi = 76.0; // поддеживаемая влажность
+float destHumi = 76.0; // поддерживаемая влажность
 float destHumiMin = 30.0;
 float destHumiMax = 90.0;
 
