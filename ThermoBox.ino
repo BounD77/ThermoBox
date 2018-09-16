@@ -6,11 +6,12 @@
 //#define DHTTYPE DHT11   // DHT 11
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 //#define DHTTYPE DHT21   // DHT 21 (AM2301)
-// выберите тип подключенного дисплея
-//#define LCD1602 1
-#define LCD1602I2C 1
 
-#define DEBUGMODE 1  // после окончания отладки закомментируем
+// выберите тип подключенного дисплея
+#define LCD1602 1
+//#define LCD1602I2C 1
+
+//#define DEBUGMODE 1  // после окончания отладки закомментируем
 
 #define KEYSELECT 5  //соответствия клавишей 
 #define KEYLEFT 4
@@ -142,19 +143,26 @@ void setup () {
   pinMode(PINRELAY, OUTPUT);
   pinMode(PINPWMFAN, OUTPUT);
   pinMode(PINPWMCOIL, OUTPUT);
-  digitalWrite(PINRELAY, LOW);
+  digitalWrite(PINRELAY, HIGH);
 
 
   TCCR2B = TCCR2B & 0b11111000 | 0x07; // устанавливаем частоту шим на 3 и 11 ноге в 4кГц
   // TCCR2B = TCCR2B & 0b11111000 | 0x02; // 32 кГц - не устанавливать
 
   // set up the LCD's number of columns and rows:
+#ifdef LCD1602I2C
   lcd.init();                      // initialize the lcd
   lcd.begin(16, 2);
   lcd.backlight();
+#endif
+
+#ifdef LCD1602
+  lcd.begin(16, 2);
+#endif
+
   // Print a message to the LCD.
-  lcd.setCursor(2, 0);
-  lcd.print("Thermobox V1");
+  lcd.setCursor(1, 0);
+  lcd.print("Thermobox V1.2");
   //  lcd.setCursor(0, 1);
   //  lcd.print("Mode1 by default");
 #ifdef DEBUGMODE
@@ -175,7 +183,7 @@ void setup () {
     EepromReadAll();
   }
 
-  delay (100);
+  delay (2000);
   lcd.clear();
 }
 
@@ -191,7 +199,7 @@ void loop() {
   if (exitMenu.tick && innerMenu) { // если таймаут
     // не забыть сделать пункт автосохранение
     innerMenu = false;
-firstLoop = true;
+    firstLoop = true;
     exitMenu.stop(); // останавливаем счетчик простоя
     lcd.clear();
   }
@@ -340,7 +348,7 @@ firstLoop = true;
             break;
           case KEYSELECT: // запоминаем значение в EEPROM и выходим на главный экран
             EepromUpdateAll();
-firstLoop = true;
+            firstLoop = true;
             innerMenu = false;
             exitMenu.stop(); // останавливаем счетчик простоя
             lcd.clear();
@@ -400,13 +408,13 @@ firstLoop = true;
 
     lcd.setCursor(10, 0);
     if (firstLoop) { // если первый проход по экарну вначале или после меню пририсовываем состояние реле
-    if (enabledRelayOnOff) {
-      
-      if (isRelayOn)  lcd.print("+");
-      else            lcd.print("-");
-      firstLoop = false;
-    }
-    else              lcd.print("#");
+      if (enabledRelayOnOff) {
+
+        if (isRelayOn)  lcd.print("+");
+        else            lcd.print("-");
+        firstLoop = false;
+      }
+      else              lcd.print("#");
     }
 
 
@@ -433,13 +441,7 @@ firstLoop = true;
       }
 
     }
-    // испарителя
-    if ((float) curHumidity > (destHumi + hystHumi / 2.0)) { // если влажность повысилась выключаем койл
-      coilSpeedOn = false;
-    }
-    if ((float) curHumidity < (destHumi - hystHumi / 2.0)) { // если влажность понизилась включаем койл
-      coilSpeedOn = true;
-    }
+
     if (coilSpeedCurrent == 0 || !coilSpeedOn) {
       digitalWrite(PINPWMCOIL, LOW); // выключен
       lcd.setCursor(11, 1);
@@ -452,14 +454,41 @@ firstLoop = true;
       for (int i = 1; i <= coilSpeedCurrent / 2; i++) {
         lcd.print("\1");
       }
-      if (fanSpeedCurrent % 2 != 0) { // напечатать половинку
+      if (coilSpeedCurrent % 2 != 0) { // напечатать половинку
         lcd.print("\2");
       }
-      for (int i = 1; i <= (fanSpeedMax - fanSpeedCurrent) / 2; i++) {
+      for (int i = 1; i <= (coilSpeedMax - coilSpeedCurrent) / 2; i++) {
         lcd.print(" ");
       }
 
     }
+    // испарителя
+    //    if ((float) curHumidity > (destHumi + hystHumi / 2.0)) { // если влажность повысилась выключаем койл
+    //      coilSpeedOn = false;
+    //    }
+    //    if ((float) curHumidity < (destHumi - hystHumi / 2.0)) { // если влажность понизилась включаем койл
+    //      coilSpeedOn = true;
+    //    }
+    //    if (coilSpeedCurrent == 0 || !coilSpeedOn) {
+    //      digitalWrite(PINPWMCOIL, LOW); // выключен
+    //      lcd.setCursor(11, 1);
+    //      lcd.print("OFF  ");
+    //    }
+    //    else {
+    //      analogWrite(PINPWMCOIL, map(coilSpeedCurrent, 0, 10, 10, 255));
+    //      // выводим в правой части мощности работающих вентиляторов
+    //      lcd.setCursor(11, 1);
+    //      for (int i = 1; i <= coilSpeedCurrent / 2; i++) {
+    //        lcd.print("\1");
+    //      }
+    //      if (fanSpeedCurrent % 2 != 0) { // напечатать половинку
+    //        lcd.print("\2");
+    //      }
+    //      for (int i = 1; i <= (fanSpeedMax - fanSpeedCurrent) / 2; i++) {
+    //        lcd.print(" ");
+    //      }
+    //
+    //    }
 
     // реле включения холодильника
 
@@ -468,7 +497,7 @@ firstLoop = true;
       if (enabledRelayOnOff) {//если задержка прошла
         enabledRelayOnOff = false;
         isRelayOn = true;
-        digitalWrite(PINRELAY, LOW); // включение в LOW
+        digitalWrite(PINRELAY, HIGH); // включение в HIGH
         minOnOff.start();   // включаем таймер задержки щелкания реле
         lcd.setCursor(10, 0);
         lcd.print("+");
@@ -489,7 +518,7 @@ firstLoop = true;
     if ( curTemp < (destTemp - hystTemp / 2.0) && isRelayOn) { // если температура низкая и реле включено выключаем холодильник
       if (enabledRelayOnOff) {//если задержка прошла
         enabledRelayOnOff = false;
-        digitalWrite(PINRELAY, HIGH);
+        digitalWrite(PINRELAY, LOW);
         isRelayOn = false;
         minOnOff.start();   // включаем таймер задержки щелкания реле
         lcd.setCursor(10, 0);
@@ -532,13 +561,29 @@ int GetKeyValue() {         // Функция устраняющая дребе�
   }
   return    oldKeyValue;
 }
+//
+//#define KEYSELECT 5  //соответствия клавишей
+//#define KEYLEFT 4
+//#define KEYUP 2
+//#define KEYDOWN 3
+//#define KEYRIGHT 1
 
 int GetButtonNumberByValue(int value) {   // Новая функция по преобразованию кода нажатой кнопки в её номер
-#ifdef DEBUGMODE
-  //Serial.println( value);
+
+#if defined(__LGT8F__) // если wavgat
+value = value + analogRead(VCCM);
 #endif
+
+
+#ifdef DEBUGMODE
+ // Serial.println( value);
+#endif
+
+
+
   //  int values[6] = {1023, 0, 131, 306, 479, 721}; // для UNO
-  int values[6] = {1023, 0, 131, 306, 479, 721}; // для Wavgat R3
+  //  int values[6] = {1023, 0, 131, 306, 479, 721}; // для UNO
+  int values[6] = {1274, 0, 209, 481, 736, 992}; // для Wavgat R3
   int error     = 15;                     // Величина отклонения от значений - погрешность
   for (int i = 0; i <= 5; i++) {
     // Если значение в заданном диапазоне values[i]+/-error - считаем, что кнопка определена
