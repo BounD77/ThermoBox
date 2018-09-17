@@ -43,7 +43,7 @@ void(* resetFunc) (void) = 0;//объявляем функцию reset с адр
 //#include <LiquidCrystal_1602_RUS.h>
 
 int numMenu = 10 ; //количество пунктов меню
-char* menuName[]  = {"Fan Speed",
+char* menuName[] = {"Fan Speed",
                      "Condenser Speed",
                      "Destination Temp",
                      "Destination Humi",
@@ -387,7 +387,7 @@ void loop() {
             if (mi == 9 && flagResetEEPROM ) { // если сброс памяти
 
               flagResetEEPROM = false;
-              for (int i = 0; i < EEPROMLEN; i++) { // забиваем память нулями
+              for (byte i = 0; i < EEPROMLEN; i++) { // забиваем память нулями
                 EEPROM_byte_write(i, 0);
               }
               resetFunc(); //вызываем reset
