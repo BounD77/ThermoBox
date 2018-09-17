@@ -1,7 +1,7 @@
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // проект термошкафа из холодильника. датчик AM2302, 2 вентилятора подключены через ШИМ, Холодильник питается через реле
 
-#define EEPROMLEN 21 //количество байт, хранящихся в EEPROM, следующим хранится CRC
+#define EEPROMLEN 22 //количество байт, хранящихся в EEPROM, следующим хранится CRC
 // Uncomment whatever type you're using!
 //#define DHTTYPE DHT11   // DHT 11
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
@@ -42,18 +42,19 @@ void(* resetFunc) (void) = 0;//объявляем функцию reset с адр
 
 //#include <LiquidCrystal_1602_RUS.h>
 
-int numMenu = 10 ; //количество пунктов меню
+int numMenu = 11 ; //количество пунктов меню
 char* menuName[] = {"Fan Speed",
-                     "Condenser Speed",
-                     "Destination Temp",
-                     "Destination Humi",
-                     "Hysteresis Temp",
-                     "Hysteresis Humi",
-                     "Relay Delay",
-                     "Menu Timeout",
-                     "Auto Save",
-                     "CLEAR EEPROM"
-                    };
+                    "Condenser Speed",
+                    "Destination Temp",
+                    "Destination Humi",
+                    "Hysteresis Temp",
+                    "Hysteresis Humi",
+                    "Relay Delay",
+                    "Menu Timeout",
+                    "Auto Save",
+                    "CLEAR EEPROM",
+                    "PWM Ratio"
+                   };
 byte fanSpeedCurrent = 5; //рабочая скорость
 byte fanSpeedMin = 0; //максимальная скорость
 byte fanSpeedMax = 10; //максимальная скорость
@@ -80,6 +81,10 @@ float destHumiMax = 90.0;
 float hystHumi = 2.0; // гистерезис влажности
 float hystHumiMin = 0.5;
 float hystHumiMax = 4.0;
+
+byte pwmRatio = 7; //частоат работы ШИМ на 3 и 11 ноге
+byte pwmRatioMin = 1; //минимальный коэффициент
+byte pwmRatioMax = 7; //максимальный коэффициент
 
 int keyValue  =  0; // Состояние покоя
 bool innerMenu = false; // признак нахождения в меню, не выводим основной экран
@@ -154,9 +159,6 @@ void setup () {
   digitalWrite(PINRELAY, HIGH);
 
 
-  TCCR2B = TCCR2B & 0b11111000 | 0x07; // устанавливаем частоту шим на 3 и 11 ноге в 4кГц
-  // TCCR2B = TCCR2B & 0b11111000 | 0x02; // 32 кГц - не устанавливать
-
   // set up the LCD's number of columns and rows:
 #ifdef LCD1602I2C
   lcd.init();                      // initialize the lcd
@@ -190,7 +192,8 @@ void setup () {
   if (EepromTestCRC()) { // если CRC норнмальное, заполняем данные из EEPROM
     EepromReadAll();
   }
-
+  TCCR2B = TCCR2B & 0b11111000 | pwmRatio ; // устанавливаем частоту шим на 3 и 11 ноге - 4кГц 0x07
+  // TCCR2B = TCCR2B & 0b11111000 | 0x02; // 32 кГц - не устанавливать
   delay (2000);
   lcd.clear();
 }
@@ -314,9 +317,16 @@ void loop() {
                 flagAutoSave = !flagAutoSave ;
 
                 break;
-              case 9: // сброс EEPROM
+              case 9: // установка коэффициента ШИМ
+                pwmRatio -=  1;
+                if (pwmRatio  < pwmRatioMin) {
+                  pwmRatio = pwmRatioMin;
+                  TCCR2B = TCCR2B & 0b11111000 | pwmRatio ; // устанавливаем частоту шим на 3 и 11 ноге
+                }
+              case 10: // сброс EEPROM
                 flagResetEEPROM = !flagResetEEPROM ;
                 break;
+
             }
 
             break;
@@ -378,7 +388,13 @@ void loop() {
               case 8: // автосохранение меню по таймауту,  без SELECT
                 flagAutoSave = !flagAutoSave ;
                 break;
-              case 9: // сброс EEPROM
+              case 9: // установка коэффициента ШИМ
+                pwmRatio +=  1;
+                if (pwmRatio  > pwmRatioMax) {
+                  pwmRatio = pwmRatioMax;
+                  TCCR2B = TCCR2B & 0b11111000 | pwmRatio ; // устанавливаем частоту шим на 3 и 11 ноге
+                }
+              case 10: // сброс EEPROM
                 flagResetEEPROM = !flagResetEEPROM ;
                 break;
             }
@@ -677,7 +693,6 @@ byte EepromCheckCRC () {  // вычисление контрольной сум�
 
 void EepromReadAll() { //считываем в переменные данные из EEPROM
 
-  //eeprom_write_byte(1, 1);
 
 #if defined(__LGT8FX8E__) // и с EEPROM WAVGAT работает по-своему и нет get|put|update, но куда-то платы надо использовать...
 
@@ -690,6 +705,7 @@ void EepromReadAll() { //считываем в переменные данные
   minTimeOnOff = EEPROM_byte_read(18);
   flagAutoSave = EEPROM_byte_read(19);
   timeToExitMenu = EEPROM_byte_read(20);
+  pwmRatio = EEPROM_byte_read(21);
 
 #else // если родная аардуина уно
   EEPROM.get(0, fanSpeedCurrent);
@@ -701,6 +717,7 @@ void EepromReadAll() { //считываем в переменные данные
   EEPROM.get(18, minTimeOnOff);
   EEPROM.get(19, flagAutoSave);
   EEPROM.get(20, timeToExitMenu);
+  EEPROM.get(21, pwmRatio);
 
 #endif
 }
@@ -718,6 +735,7 @@ void EepromUpdateAll() { //записываем переменные в EEPROM, 
   EEPROM_byte_write(18, minTimeOnOff);
   EEPROM_byte_write(19, flagAutoSave);
   EEPROM_byte_write(20, timeToExitMenu);
+  EEPROM_byte_write(21, pwmRatio);
 
   EEPROM_byte_write(EEPROMLEN, EepromCheckCRC());
 #else
@@ -730,6 +748,7 @@ void EepromUpdateAll() { //записываем переменные в EEPROM, 
   EEPROM.put(18, minTimeOnOff);
   EEPROM.put(19, flagAutoSave);
   EEPROM.put(20, timeToExitMenu);
+  EEPROM.put(21, pwmRatio);
 
   EEPROM.update(EEPROMLEN, EepromCheckCRC());
 #endif
@@ -803,7 +822,13 @@ void PrintSecondStringInMenu(byte value) { // функция вывода вто
         lcd.print (" NO");
       }
       break;
-    case 9: // сброс EEPROM
+    case 9: //  ШИМ
+      lcd.setCursor(5, 1);
+      lcd.print (" 0x0");
+      lcd.print (pwmRatio);
+
+      break;
+    case 10: // сброс EEPROM
       lcd.setCursor(6, 1);
       if (flagResetEEPROM) {
         lcd.print ("YES");
