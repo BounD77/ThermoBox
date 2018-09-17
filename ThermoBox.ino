@@ -19,7 +19,7 @@
 #define KEYDOWN 3
 #define KEYRIGHT 1
 
-#define DHTPIN      2     // what digital pin we're connected to
+#define DHTPIN      2     // порт датчика 
 #define PININ      A0 // аналоговый порт кнопок
 #define PINRELAY   12 //реле включения холодильника нормально включено
 #define PINPWMFAN   3 //порт нижнего вентилятора
@@ -336,48 +336,41 @@ void loop() {
                 if (fanSpeedCurrent  < fanSpeedMax) {
                   fanSpeedCurrent++;
                 }
-                PrintSecondStringInMenu(mi);
                 break;
               case 1: // вращение вентилятора испарителя
                 if (coilSpeedCurrent  < coilSpeedMax) {
                   coilSpeedCurrent++;
                 }
-                PrintSecondStringInMenu(mi);
                 break;
               case 2: // температура
                 destTemp = destTemp + 0.1;
                 if (destTemp  > destTempMax) {
                   destTemp  = destTempMax;
                 }
-                PrintSecondStringInMenu(mi);
                 break;
               case 3: // влажность
                 destHumi = destHumi + 0.1;
                 if (destHumi  > destHumiMax) {
                   destHumi  = destHumiMax;
                 }
-                PrintSecondStringInMenu(mi);
                 break;
               case 4: // температура - гистерезис
                 hystTemp = hystTemp + 0.1;
                 if (hystTemp  > hystTempMax) {
                   hystTemp  = hystTempMax;
                 }
-                PrintSecondStringInMenu(mi);
                 break;
               case 5: // влажность - гистерезис
                 hystHumi = hystHumi + 0.1;
                 if (hystHumi  > hystHumiMax) {
                   hystHumi  = hystHumiMax;
                 }
-                PrintSecondStringInMenu(mi);
                 break;
               case 6: // время задержки щелканья реле
                 minTimeOnOff = minTimeOnOff + 1;
                 if (minTimeOnOff  > minTimeOnOffMax) {
                   minTimeOnOff = minTimeOnOffMax;
                 }
-                PrintSecondStringInMenu(mi);
                 break;
               case 7: // время выхода из меню по таймауту, сек
                 timeToExitMenu = timeToExitMenu + 1;
@@ -398,6 +391,7 @@ void loop() {
                 flagResetEEPROM = !flagResetEEPROM ;
                 break;
             }
+            PrintSecondStringInMenu(mi);
             break;
           case KEYSELECT: // запоминаем значение в EEPROM и выходим на главный экран
             if (mi == 9 && flagResetEEPROM ) { // если сброс памяти
@@ -539,8 +533,15 @@ void loop() {
       digitalWrite(PINPWMCOIL, LOW); // выключен
       lcd.setCursor(11, 1);
       lcd.print("OFF  ");
+#ifdef DEBUGMODE
+      Serial.println("Coil fan is OFF");
+#endif
     }
     else {
+#ifdef DEBUGMODE
+      Serial.print("Coil fan set ");
+      Serial.println(coilSpeedCurrent);
+#endif
       analogWrite(PINPWMCOIL, map(coilSpeedCurrent, 0, 10, 10, 255));
       // выводим в правой части мощности работающих вентиляторов
       lcd.setCursor(11, 1);
@@ -599,11 +600,8 @@ void loop() {
 #endif
       }
     }
-
   }
-
 }
-
 
 
 int GetKeyValue() {         // Функция устраняющая дребезг
