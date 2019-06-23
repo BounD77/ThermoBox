@@ -1,7 +1,7 @@
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // проект термошкафа из холодильника. датчик AM2302, 2 вентилятора подключены через ШИМ, Холодильник питается через реле
 
-#define EEPROMLEN 19 //количество байт, хранящихся в EEPROM, следующим хранится CRC
+#define EEPROMLEN 21 //количество байт, хранящихся в EEPROM, следующим хранится CRC
 // Uncomment whatever type you're using!
 //#define DHTTYPE DHT11   // DHT 11
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
@@ -11,7 +11,7 @@
 #define LCD1602 1
 //#define LCD1602I2C 1
 
-//#define DEBUGMODE 1  // после окончания отладки закомментируем
+ //#define DEBUGMODE 1  // после окончания отладки закомментируем
 
 #define KEYSELECT 5  //соответствия клавишей 
 #define KEYLEFT 4
@@ -25,6 +25,7 @@
 #define PINPWMFAN   3 //порт нижнего вентилятора
 #define PINPWMCOIL 11 //порт вентилятора испарителя
 
+void(* resetFunc) (void) = 0;//объявляем функцию reset с адресом 0
 
 #include <arduino.h>
 #include <EEPROM.h>
@@ -41,35 +42,38 @@
 
 //#include <LiquidCrystal_1602_RUS.h>
 
-int numMenu = 7 ; //количество пунктов меню
-char* menuName[]  = {"Fan Speed",
-                     "Condenser Speed",
-                     "Destination Temp",
-                     "Destination Humi",
-                     "Hysteresis Temp",
-                     "Hysteresis Humi",
-                     "Relay Delay"
-                    };
+int numMenu = 10 ; //количество пунктов меню
+char* menuName[] = {"Fan Speed",
+                    "Condenser Speed",
+                    "Destination Temp",
+                    "Destination Humi",
+                    "Hysteresis Temp",
+                    "Hysteresis Humi",
+                    "Relay Delay",
+                    "Menu Timeout",
+                    "Auto Save",
+                    "CLEAR EEPROM"
+                   };
 byte fanSpeedCurrent = 5; //рабочая скорость
-byte fanSpeedMin = 0; //максимальная скорость
+byte fanSpeedMin = 0; //минимальная скорость
 byte fanSpeedMax = 10; //максимальная скорость
 bool fanSpeedOn = true; //флаг включено вентилятора обдува
 
 byte coilSpeedCurrent = 7; //рабочая скорость
-byte coilSpeedMin = 1; //максимальная скорость
+byte coilSpeedMin = 0; //минимальная скорость
 byte coilSpeedMax = 10; //максимальная скорость
 bool coilSpeedOn = true; //флаг включено вентилятора испарителя
 bool firstLoop = true; //флаг первого запуска
 
-float destTemp = 12.0; // поддеживаемая температура
+float destTemp = 15.0; // поддеживаемая температура
 float destTempMin = 3.0;
-float destTempMax = 30.0;
+float destTempMax = 35.0;
 
 float hystTemp = 2.0; // температурный гистерезис
-float hystTempMin = 0.3;
+float hystTempMin = 0.2;
 float hystTempMax = 4.0;
 
-float destHumi = 76.0; // поддерживаемая влажность
+float destHumi = 75.0; // поддерживаемая влажность
 float destHumiMin = 30.0;
 float destHumiMax = 90.0;
 
@@ -80,11 +84,15 @@ float hystHumiMax = 4.0;
 int keyValue  =  0; // Состояние покоя
 bool innerMenu = false; // признак нахождения в меню, не выводим основной экран
 byte itemMenu = 1; //номер пункта меню при движении
-int timeToExitMenu = 4 * 1000; //время по неактивности кнопок выход из меню в основной экран (10 сек)
+int timeToExitMenu = 5 * 1000; //время по неактивности кнопок выход из меню в основной экран (10 сек)
+byte timeToExitMenuMin = 1 ;
+byte timeToExitMenuMax = 15 ;
 byte mi = 0;
 byte minTimeOnOff = 5; // время задержки между переключениями реле холодильника, 5 мин
 byte minTimeOnOffMin = 1;
 byte minTimeOnOffMax = 20;
+bool flagAutoSave = false; //автосохранение в EEPROM после выхода по таймауту из меню, без SELECT, не думаю что хорошая идея, но вдруг...
+bool flagResetEEPROM = false; // флаг сброса памяти
 
 bool enabledRelayOnOff = false ; //разрешено ли щелкать реле - при запуске задержка
 bool isRelayOn = true; // включено ли реле - при запуске холодильник включен
@@ -162,9 +170,9 @@ void setup () {
 
   // Print a message to the LCD.
   lcd.setCursor(1, 0);
-  lcd.print("Thermobox V1.2");
+  lcd.print("Thermobox V1.32");
   //  lcd.setCursor(0, 1);
-  //  lcd.print("Mode1 by default");
+  //  lcd.print("Mode1 by default"); 
 #ifdef DEBUGMODE
   Serial.begin(9600);
   Serial.println("Debug begin!");
@@ -198,6 +206,9 @@ void loop() {
   exitMenu.read(timeToExitMenu); //
   if (exitMenu.tick && innerMenu) { // если таймаут
     // не забыть сделать пункт автосохранение
+    if (flagAutoSave) { //если автосохранение включено
+      EepromUpdateAll();
+    }
     innerMenu = false;
     firstLoop = true;
     exitMenu.stop(); // останавливаем счетчик простоя
@@ -293,7 +304,21 @@ void loop() {
                 }
                 PrintSecondStringInMenu(mi);
                 break;
+              case 7: // время выхода из меню по таймауту, сек
+                timeToExitMenu = timeToExitMenu - 1;
+                if (timeToExitMenu  < timeToExitMenuMin) {
+                  timeToExitMenu = timeToExitMenuMin;
+                }
+                break;
+              case 8: // автосохранение меню по таймауту,  без SELECT
+                flagAutoSave = !flagAutoSave ;
+
+                break;
+              case 9: // сброс EEPROM
+                flagResetEEPROM = !flagResetEEPROM ;
+                break;
             }
+
             break;
           case KEYRIGHT: // увеличиваем значения
             switch (mi) {
@@ -344,21 +369,46 @@ void loop() {
                 }
                 PrintSecondStringInMenu(mi);
                 break;
+              case 7: // время выхода из меню по таймауту, сек
+                timeToExitMenu = timeToExitMenu + 1;
+                if (timeToExitMenu > timeToExitMenuMax) {
+                  timeToExitMenu = timeToExitMenuMax;
+                }
+                break;
+              case 8: // автосохранение меню по таймауту,  без SELECT
+                flagAutoSave = !flagAutoSave ;
+                break;
+              case 9: // сброс EEPROM
+                flagResetEEPROM = !flagResetEEPROM ;
+                break;
             }
             break;
           case KEYSELECT: // запоминаем значение в EEPROM и выходим на главный экран
-            EepromUpdateAll();
+            if (mi == 9 && flagResetEEPROM ) { // если сброс памяти
+
+              flagResetEEPROM = false;
+              for (byte i = 0; i < EEPROMLEN; i++) { // забиваем память нулями
+                EEPROM_byte_write(i, 0);
+              }
+              resetFunc(); //вызываем reset
+#ifdef DEBUGMODE
+              Serial.println("EEPROM cleared");
+#endif
+            }
+            else {
+              EepromUpdateAll();
+            }
             firstLoop = true;
             innerMenu = false;
             exitMenu.stop(); // останавливаем счетчик простоя
             lcd.clear();
             break;
+
         }
       }
 #ifdef DEBUGMODE
       Serial.println("Key pressed: " + String(keyValue));
 #endif
-
 
     }
     else if (keyValue < 0) {       // Если -1 - неизвестное состояние, незапрограммированное нажатие
@@ -396,7 +446,9 @@ void loop() {
       lcd.print ("Failed to read ");
       lcd.setCursor(0, 1);
       lcd.print ("from DHT sensor!");
-      return;
+       //digitalWrite(PINRELAY, !digitalRead(PINRELAY));
+      delay(2000);
+      // return;
     }
     lcd.print ("Temp:"); //выводим все данные
     lcd.print ((float)curTemp, 1);
@@ -420,14 +472,15 @@ void loop() {
 
 
     //включаем/выключаем вентиляторы
-    // нижний (всегда работает
+    // нижний
     if (fanSpeedCurrent == 0 || !fanSpeedOn) {
       digitalWrite(PINPWMFAN, LOW); // выключен
       lcd.setCursor(11, 0);
       lcd.print("OFF  ");
     }
     else {
-      analogWrite(PINPWMFAN, map(fanSpeedCurrent, 0, 10, 10, 255));
+      digitalWrite(PINPWMFAN, HIGH); // включен
+      analogWrite(PINPWMFAN, map(fanSpeedCurrent, 0, 10, 0, 255));
       // выводим в правой части мощности работающих вентиляторов
       lcd.setCursor(11, 0);
       for (int i = 1; i <= fanSpeedCurrent / 2; i++) {
@@ -441,14 +494,22 @@ void loop() {
       }
 
     }
-
+    
+    // испарителя
+    if ((float) curHumidity > (destHumi + hystHumi / 2.0)) { // если влажность повысилась выключаем койл
+      coilSpeedOn = false;
+    }
+    if ((float) curHumidity < (destHumi - hystHumi / 2.0)) { // если влажность понизилась включаем койл
+      coilSpeedOn = true;
+    }
     if (coilSpeedCurrent == 0 || !coilSpeedOn) {
       digitalWrite(PINPWMCOIL, LOW); // выключен
       lcd.setCursor(11, 1);
       lcd.print("OFF  ");
     }
     else {
-      analogWrite(PINPWMCOIL, map(coilSpeedCurrent, 0, 10, 10, 255));
+      digitalWrite(PINPWMCOIL, HIGH); // включен
+      analogWrite(PINPWMCOIL, map(coilSpeedCurrent, 0, 10, 0, 255));
       // выводим в правой части мощности работающих вентиляторов
       lcd.setCursor(11, 1);
       for (int i = 1; i <= coilSpeedCurrent / 2; i++) {
@@ -462,33 +523,33 @@ void loop() {
       }
 
     }
-    // испарителя
-    //    if ((float) curHumidity > (destHumi + hystHumi / 2.0)) { // если влажность повысилась выключаем койл
-    //      coilSpeedOn = false;
-    //    }
-    //    if ((float) curHumidity < (destHumi - hystHumi / 2.0)) { // если влажность понизилась включаем койл
-    //      coilSpeedOn = true;
-    //    }
-    //    if (coilSpeedCurrent == 0 || !coilSpeedOn) {
-    //      digitalWrite(PINPWMCOIL, LOW); // выключен
-    //      lcd.setCursor(11, 1);
-    //      lcd.print("OFF  ");
-    //    }
-    //    else {
-    //      analogWrite(PINPWMCOIL, map(coilSpeedCurrent, 0, 10, 10, 255));
-    //      // выводим в правой части мощности работающих вентиляторов
-    //      lcd.setCursor(11, 1);
-    //      for (int i = 1; i <= coilSpeedCurrent / 2; i++) {
-    //        lcd.print("\1");
-    //      }
-    //      if (fanSpeedCurrent % 2 != 0) { // напечатать половинку
-    //        lcd.print("\2");
-    //      }
-    //      for (int i = 1; i <= (fanSpeedMax - fanSpeedCurrent) / 2; i++) {
-    //        lcd.print(" ");
-    //      }
-    //
-    //    }
+  //    // испарителя
+  //    if ((float) curHumidity > (destHumi + hystHumi / 2.0)) { // если влажность повысилась выключаем койл
+  //      coilSpeedOn = false;
+  //    }
+  //    if ((float) curHumidity < (destHumi - hystHumi / 2.0)) { // если влажность понизилась включаем койл
+  //      coilSpeedOn = true;
+  //    }
+  //    if (coilSpeedCurrent == 0 || !coilSpeedOn) {
+  //      digitalWrite(PINPWMCOIL, LOW); // выключен
+  //      lcd.setCursor(11, 1);
+  //      lcd.print("OFF  ");
+  //    }
+  //    else {
+  //      analogWrite(PINPWMCOIL, map(coilSpeedCurrent, 0, 10, 0, 255));
+  //      // выводим в правой части мощности работающих вентиляторов
+  //      lcd.setCursor(11, 1);
+  //      for (int i = 1; i <= coilSpeedCurrent / 2; i++) {
+  //        lcd.print("\1");
+  //      }
+  //      if (fanSpeedCurrent % 2 != 0) { // напечатать половинку
+  //        lcd.print("\2");
+  //      }
+  //      for (int i = 1; i <= (fanSpeedMax - fanSpeedCurrent) / 2; i++) {
+  //        lcd.print(" ");
+  //      }
+  //
+  //    }
 
     // реле включения холодильника
 
@@ -523,7 +584,9 @@ void loop() {
         minOnOff.start();   // включаем таймер задержки щелкания реле
         lcd.setCursor(10, 0);
         lcd.print("-");
+#ifdef DEBUGMODE
         Serial.println("Temp is Low, minTimeOnOff tick, enabledRelayOnOff = true, isRelayOn = true");
+#endif
       }
       else { // если задержка напечатаем решетку
         lcd.setCursor(10, 0);
@@ -567,30 +630,33 @@ int GetKeyValue() {         // Функция устраняющая дребе�
 //#define KEYUP 2
 //#define KEYDOWN 3
 //#define KEYRIGHT 1
+//#define NONE 0
 
 int GetButtonNumberByValue(int value) {   // Новая функция по преобразованию кода нажатой кнопки в её номер
 
-#if defined(__LGT8F__) // если wavgat
-value = value + analogRead(VCCM);
-#endif
+  //#if defined(__LGT8F__) // если wavgat
+  //  value = value + analogRead(VCCM);
+  //#endif
 
 
 #ifdef DEBUGMODE
- // Serial.println( value);
+//  Serial.println( value);
 #endif
 
 
 
+
+  int values[6] = {1023, 13, 152, 330, 502, 738}; // для UNO
   //  int values[6] = {1023, 0, 131, 306, 479, 721}; // для UNO
-  //  int values[6] = {1023, 0, 131, 306, 479, 721}; // для UNO
-  int values[6] = {1274, 0, 209, 481, 736, 992}; // для Wavgat R3
-  int error     = 15;                     // Величина отклонения от значений - погрешность
+  // int values[6] = {1274, 0, 209, 481, 736, 992}; // для Wavgat R3
+  int error     = 10;                     // Величина отклонения от значений - погрешность
   for (int i = 0; i <= 5; i++) {
     // Если значение в заданном диапазоне values[i]+/-error - считаем, что кнопка определена
     if (value <= values[i] + error && value >= values[i] - error) return i;
   }
   return -1;                              // Значение не принадлежит заданному диапазону
 }
+
 
 bool EepromTestCRC () {  // вычисление контрольной суммы
 
@@ -604,8 +670,10 @@ bool EepromTestCRC () {  // вычисление контрольной сумм
   }
   else {
     // контрольная сумма неправильная
+#ifdef DEBUGMODE
     Serial.println();
-    Serial.println("EEPROM= data error");
+    Serial.print("EEPROM= CRC incorrect, data error");
+#endif
     return false;
   }
 
@@ -624,28 +692,63 @@ byte EepromCheckCRC () {  // вычисление контрольной сум�
 
 void EepromReadAll() { //считываем в переменные данные из EEPROM
 
-  // EEPROM.get(0, fanSpeedCurrent);
-  //EEPROM.get(1, coilSpeedCurrent);
-  // EEPROM.get(2, destTemp);
-  // EEPROM.get(6, destHumi);
-  // EEPROM.get(10, hystTemp);
-  // EEPROM.get(14, hystHumi);
-  // EEPROM.get(18, minTimeOnOff);
+  //eeprom_write_byte(1, 1);
+
+#if defined(__LGT8FX8E__) // и с EEPROM WAVGAT работает по-своему и нет get|put|update, но куда-то платы надо использовать...
+
+  fanSpeedCurrent = EEPROM_byte_read(0);
+  coilSpeedCurrent = EEPROM_byte_read(1);
+  destTemp = EEPROM_float_read(2);
+  destHumi = EEPROM_float_read(6);
+  hystTemp = EEPROM_float_read(10);
+  hystHumi = EEPROM_float_read(14);
+  minTimeOnOff = EEPROM_byte_read(18);
+  flagAutoSave = EEPROM_byte_read(19);
+  timeToExitMenu = EEPROM_byte_read(20);
+
+#else // если родная аардуина уно
+  EEPROM.get(0, fanSpeedCurrent);
+  EEPROM.get(1, coilSpeedCurrent);
+  EEPROM.get(2, destTemp);
+  EEPROM.get(6, destHumi);
+  EEPROM.get(10, hystTemp);
+  EEPROM.get(14, hystHumi);
+  EEPROM.get(18, minTimeOnOff);
+  EEPROM.get(19, flagAutoSave);
+  EEPROM.get(20, timeToExitMenu);
+
+#endif
 }
 
 void EepromUpdateAll() { //записываем переменные в EEPROM, put работает как update, не записывает, если данные не изменились
 
-  // EEPROM.put(0, fanSpeedCurrent);
-  // EEPROM.put(1, coilSpeedCurrent);
-  // EEPROM.put(2, destTemp);
-  // EEPROM.put(6, destHumi);
-  // EEPROM.put(10, hystTemp);
-  // EEPROM.put(14, hystHumi);
-  // EEPROM.put(18, minTimeOnOff);
+#if defined(__LGT8FX8E__)
 
-  //  EEPROM.update(EEPROMLEN, EepromCheckCRC());
+  EEPROM_byte_write(0, fanSpeedCurrent);
+  EEPROM_byte_write(1, coilSpeedCurrent);
+  EEPROM_float_write(2, destTemp);
+  EEPROM_float_write(6, destHumi);
+  EEPROM_float_write(10, hystTemp);
+  EEPROM_float_write(14, hystHumi);
+  EEPROM_byte_write(18, minTimeOnOff);
+  EEPROM_byte_write(19, flagAutoSave);
+  EEPROM_byte_write(20, timeToExitMenu);
+
+  EEPROM_byte_write(EEPROMLEN, EepromCheckCRC());
+#else
+  EEPROM.put(0, fanSpeedCurrent);
+  EEPROM.put(1, coilSpeedCurrent);
+  EEPROM.put(2, destTemp);
+  EEPROM.put(6, destHumi);
+  EEPROM.put(10, hystTemp);
+  EEPROM.put(14, hystHumi);
+  EEPROM.put(18, minTimeOnOff);
+  EEPROM.put(19, flagAutoSave);
+  EEPROM.put(20, timeToExitMenu);
+
+  EEPROM.update(EEPROMLEN, EepromCheckCRC());
+#endif
 }
-
 
 void PrintSecondStringInMenu(byte value) { // функция вывода второй строки (значений в меню)
   switch (value) {
@@ -702,6 +805,68 @@ void PrintSecondStringInMenu(byte value) { // функция вывода вто
       lcd.setCursor(5, 1);    lcd.print (minTimeOnOff);
       lcd.print (" min ");
       break;
+    case 7: //  время выхода из меню по таймауту, сек
+      lcd.setCursor(5, 1);    lcd.print (timeToExitMenu);
+      lcd.print (" sec ");
+      break;
+    case 8: //  автосохранение меню по таймауту,  без SELECT
+      lcd.setCursor(6, 1);
+      if (flagAutoSave) {
+        lcd.print ("YES");
+      }
+      else {
+        lcd.print (" NO");
+      }
+      break;
+    case 9: // сброс EEPROM
+      lcd.setCursor(6, 1);
+      if (flagResetEEPROM) {
+        lcd.print ("YES");
+      }
+      else {
+
+        lcd.print (" NO");
+      }
+      break;
   }
 }
 
+
+// чтение
+float EEPROM_float_read(int addr) {
+  byte raw[4];
+  for (byte i = 0; i < 4; i++) raw[i] = EEPROM.read(addr + i);
+  float &num = (float&)raw;
+  return num;
+}
+
+// запись
+void EEPROM_float_write(int addr, float num) {
+  if (EEPROM_float_read(addr) != num) { //если сохраняемое отличается
+    byte raw[4];
+    (float&)raw = num;
+    for (byte i = 0; i < 4; i++) EEPROM.write(addr + i, raw[i]);
+  }
+  else {
+#ifdef DEBUGMODE
+    Serial.println("Not different, no save");
+#endif
+  }
+}
+
+// чтение
+float EEPROM_byte_read(int addr) {
+  return EEPROM.read(addr);
+}
+
+// запись
+void EEPROM_byte_write(int addr, byte num) {
+  if (EEPROM_byte_read(addr) != num) { //если сохраняемое отличается
+    EEPROM.write(addr, num);
+  }
+  else {
+#ifdef DEBUGMODE
+    Serial.println("Not different, no save");
+#endif
+  }
+}
