@@ -1,7 +1,7 @@
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // проект термошкафа из холодильника. датчик AM2302, 2 вентилятора подключены через ШИМ, Холодильник питается через реле
 
-#define EEPROMLEN 21 //количество байт, хранящихся в EEPROM, следующим хранится CRC
+#define EEPROMLEN 22 //количество байт, хранящихся в EEPROM, следующим хранится CRC
 // Uncomment whatever type you're using!
 //#define DHTTYPE DHT11   // DHT 11
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
@@ -11,7 +11,7 @@
 #define LCD1602 1
 //#define LCD1602I2C 1
 
- //#define DEBUGMODE 1  // после окончания отладки закомментируем
+//#define DEBUGMODE 1  // после окончания отладки закомментируем
 
 #define KEYSELECT 5  //соответствия клавишей 
 #define KEYLEFT 4
@@ -42,9 +42,10 @@ void(* resetFunc) (void) = 0;//объявляем функцию reset с адр
 
 //#include <LiquidCrystal_1602_RUS.h>
 
-int numMenu = 10 ; //количество пунктов меню
+int numMenu = 11 ; //количество пунктов меню
 char* menuName[] = {"Fan Speed",
                     "Condenser Speed",
+                    "Condensr MinSpd",
                     "Destination Temp",
                     "Destination Humi",
                     "Hysteresis Temp",
@@ -65,6 +66,10 @@ byte coilSpeedMax = 10; //максимальная скорость
 bool coilSpeedOn = true; //флаг включено вентилятора испарителя
 bool firstLoop = true; //флаг первого запуска
 
+byte conderserSpeedMin = 2; //минимальная скорость испарителя, даже при превышении установленной влажности
+byte conderserSpeedMinMin = 0;
+byte conderserSpeedMinMax = 10;
+
 float destTemp = 15.0; // поддеживаемая температура
 float destTempMin = 3.0;
 float destTempMax = 35.0;
@@ -84,9 +89,9 @@ float hystHumiMax = 4.0;
 int keyValue  =  0; // Состояние покоя
 bool innerMenu = false; // признак нахождения в меню, не выводим основной экран
 byte itemMenu = 1; //номер пункта меню при движении
-int timeToExitMenu = 5 * 1000; //время по неактивности кнопок выход из меню в основной экран (10 сек)
-byte timeToExitMenuMin = 1 ;
-byte timeToExitMenuMax = 15 ;
+unsigned char  timeToExitMenu = 5 ; //время по неактивности кнопок выход из меню в основной экран (5 сек)
+unsigned char timeToExitMenuMin = 1 ;
+unsigned char timeToExitMenuMax = 20  ;
 byte mi = 0;
 byte minTimeOnOff = 5; // время задержки между переключениями реле холодильника, 5 мин
 byte minTimeOnOffMin = 1;
@@ -170,9 +175,9 @@ void setup () {
 
   // Print a message to the LCD.
   lcd.setCursor(1, 0);
-  lcd.print("Thermobox V1.32");
+  lcd.print("Thermobox V1.33");
   //  lcd.setCursor(0, 1);
-  //  lcd.print("Mode1 by default"); 
+  //  lcd.print("Mode1 by default");
 #ifdef DEBUGMODE
   Serial.begin(9600);
   Serial.println("Debug begin!");
@@ -203,7 +208,7 @@ void loop() {
 #endif
   // проверяем нажатия кнопок и обрабатываем нажатия
   int newKeyValue = GetKeyValue(); // Получаем актуальное состояние кнопок с коррекцией дребезга
-  exitMenu.read(timeToExitMenu); //
+  exitMenu.read(timeToExitMenu*1000); //
   if (exitMenu.tick && innerMenu) { // если таймаут
     // не забыть сделать пункт автосохранение
     if (flagAutoSave) { //если автосохранение включено
@@ -269,60 +274,68 @@ void loop() {
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 2: // температура
+              case 2: // минимальное  вращение вентилятора испарителя
+                if (conderserSpeedMin  > conderserSpeedMinMin) {
+                  conderserSpeedMin--;
+                }
+                PrintSecondStringInMenu(mi);
+                break;
+              case 3: // температура
                 destTemp = destTemp - 0.1;
                 if (destTemp  < destTempMin) {
                   destTemp  = destTempMin;
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 3: // влажность
+              case 4: // влажность
                 destHumi = destHumi - 0.1;
                 if (destHumi  < destHumiMin) {
                   destHumi  = destHumiMin;
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 4: // температура hyst
+              case 5: // температура hyst
                 hystTemp = hystTemp - 0.1;
                 if (hystTemp  < hystTempMin) {
                   hystTemp  = hystTempMin;
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 5: // влажность hyst
+              case 6: // влажность hyst
                 hystHumi = hystHumi - 0.1;
                 if (hystHumi  < hystHumiMin) {
                   hystHumi  = hystHumiMin;
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 6: // время задержки щелканья реле
+              case 7: // время задержки щелканья реле
                 minTimeOnOff = minTimeOnOff - 1;
                 if (minTimeOnOff  < minTimeOnOffMin) {
                   minTimeOnOff = minTimeOnOffMin;
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 7: // время выхода из меню по таймауту, сек
+              case 8: // время выхода из меню по таймауту, сек
                 timeToExitMenu = timeToExitMenu - 1;
                 if (timeToExitMenu  < timeToExitMenuMin) {
                   timeToExitMenu = timeToExitMenuMin;
-                }
+                                 }
+                                PrintSecondStringInMenu(mi);
                 break;
-              case 8: // автосохранение меню по таймауту,  без SELECT
+              case 9: // автосохранение меню по таймауту,  без SELECT
                 flagAutoSave = !flagAutoSave ;
-
+                PrintSecondStringInMenu(mi);
                 break;
-              case 9: // сброс EEPROM
+              case 10: // сброс EEPROM
                 flagResetEEPROM = !flagResetEEPROM ;
+                                PrintSecondStringInMenu(mi);
                 break;
             }
 
             break;
           case KEYRIGHT: // увеличиваем значения
             switch (mi) {
-              case 0: // вращение нижнего вентилятора
+              case 0: // вращение  вентилятора выдува
                 if (fanSpeedCurrent  < fanSpeedMax) {
                   fanSpeedCurrent++;
                 }
@@ -334,57 +347,66 @@ void loop() {
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 2: // температура
+              case 2: // вращение вентилятора испарителя
+                if (conderserSpeedMin  < conderserSpeedMinMax) {
+                  conderserSpeedMin++;
+                }
+                PrintSecondStringInMenu(mi);
+                break;
+              case 3: // температура
                 destTemp = destTemp + 0.1;
                 if (destTemp  > destTempMax) {
                   destTemp  = destTempMax;
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 3: // влажность
+              case 4: // влажность
                 destHumi = destHumi + 0.1;
                 if (destHumi  > destHumiMax) {
                   destHumi  = destHumiMax;
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 4: // температура - гистерезис
+              case 5: // температура - гистерезис
                 hystTemp = hystTemp + 0.1;
                 if (hystTemp  > hystTempMax) {
                   hystTemp  = hystTempMax;
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 5: // влажность - гистерезис
+              case 6: // влажность - гистерезис
                 hystHumi = hystHumi + 0.1;
                 if (hystHumi  > hystHumiMax) {
                   hystHumi  = hystHumiMax;
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 6: // время задержки щелканья реле
+              case 7: // время задержки щелканья реле
                 minTimeOnOff = minTimeOnOff + 1;
                 if (minTimeOnOff  > minTimeOnOffMax) {
                   minTimeOnOff = minTimeOnOffMax;
                 }
                 PrintSecondStringInMenu(mi);
                 break;
-              case 7: // время выхода из меню по таймауту, сек
+              case 8: // время выхода из меню по таймауту, сек
                 timeToExitMenu = timeToExitMenu + 1;
                 if (timeToExitMenu > timeToExitMenuMax) {
                   timeToExitMenu = timeToExitMenuMax;
                 }
+                                PrintSecondStringInMenu(mi);
                 break;
-              case 8: // автосохранение меню по таймауту,  без SELECT
+              case 9: // автосохранение меню по таймауту,  без SELECT
                 flagAutoSave = !flagAutoSave ;
+                                PrintSecondStringInMenu(mi);
                 break;
-              case 9: // сброс EEPROM
+              case 10: // сброс EEPROM
                 flagResetEEPROM = !flagResetEEPROM ;
+                                PrintSecondStringInMenu(mi);
                 break;
             }
             break;
           case KEYSELECT: // запоминаем значение в EEPROM и выходим на главный экран
-            if (mi == 9 && flagResetEEPROM ) { // если сброс памяти
+            if (mi == 10 && flagResetEEPROM ) { // если сброс памяти
 
               flagResetEEPROM = false;
               for (byte i = 0; i < EEPROMLEN; i++) { // забиваем память нулями
@@ -446,7 +468,7 @@ void loop() {
       lcd.print ("Failed to read ");
       lcd.setCursor(0, 1);
       lcd.print ("from DHT sensor!");
-       //digitalWrite(PINRELAY, !digitalRead(PINRELAY));
+      //digitalWrite(PINRELAY, !digitalRead(PINRELAY));
       delay(2000);
       // return;
     }
@@ -459,7 +481,7 @@ void loop() {
     lcd.print ("%");
 
     lcd.setCursor(10, 0);
-    if (firstLoop) { // если первый проход по экарну вначале или после меню пририсовываем состояние реле
+    if (firstLoop) { // если первый проход по экрану вначале или после меню пририсовываем состояние реле
       if (enabledRelayOnOff) {
 
         if (isRelayOn)  lcd.print("+");
@@ -474,7 +496,12 @@ void loop() {
     //включаем/выключаем вентиляторы
     // нижний
     if (fanSpeedCurrent == 0 || !fanSpeedOn) {
-      digitalWrite(PINPWMFAN, LOW); // выключен
+      if (conderserSpeedMin > 0) {
+        analogWrite(PINPWMFAN, map(conderserSpeedMin, 0, 10, 0, 255));
+      }
+      else {
+        digitalWrite(PINPWMFAN, LOW); // выключен
+      }
       lcd.setCursor(11, 0);
       lcd.print("OFF  ");
     }
@@ -494,7 +521,7 @@ void loop() {
       }
 
     }
-    
+
     // испарителя
     if ((float) curHumidity > (destHumi + hystHumi / 2.0)) { // если влажность повысилась выключаем койл
       coilSpeedOn = false;
@@ -523,33 +550,33 @@ void loop() {
       }
 
     }
-  //    // испарителя
-  //    if ((float) curHumidity > (destHumi + hystHumi / 2.0)) { // если влажность повысилась выключаем койл
-  //      coilSpeedOn = false;
-  //    }
-  //    if ((float) curHumidity < (destHumi - hystHumi / 2.0)) { // если влажность понизилась включаем койл
-  //      coilSpeedOn = true;
-  //    }
-  //    if (coilSpeedCurrent == 0 || !coilSpeedOn) {
-  //      digitalWrite(PINPWMCOIL, LOW); // выключен
-  //      lcd.setCursor(11, 1);
-  //      lcd.print("OFF  ");
-  //    }
-  //    else {
-  //      analogWrite(PINPWMCOIL, map(coilSpeedCurrent, 0, 10, 0, 255));
-  //      // выводим в правой части мощности работающих вентиляторов
-  //      lcd.setCursor(11, 1);
-  //      for (int i = 1; i <= coilSpeedCurrent / 2; i++) {
-  //        lcd.print("\1");
-  //      }
-  //      if (fanSpeedCurrent % 2 != 0) { // напечатать половинку
-  //        lcd.print("\2");
-  //      }
-  //      for (int i = 1; i <= (fanSpeedMax - fanSpeedCurrent) / 2; i++) {
-  //        lcd.print(" ");
-  //      }
-  //
-  //    }
+    //    // испарителя
+    //    if ((float) curHumidity > (destHumi + hystHumi / 2.0)) { // если влажность повысилась выключаем койл
+    //      coilSpeedOn = false;
+    //    }
+    //    if ((float) curHumidity < (destHumi - hystHumi / 2.0)) { // если влажность понизилась включаем койл
+    //      coilSpeedOn = true;
+    //    }
+    //    if (coilSpeedCurrent == 0 || !coilSpeedOn) {
+    //      digitalWrite(PINPWMCOIL, LOW); // выключен
+    //      lcd.setCursor(11, 1);
+    //      lcd.print("OFF  ");
+    //    }
+    //    else {
+    //      analogWrite(PINPWMCOIL, map(coilSpeedCurrent, 0, 10, 0, 255));
+    //      // выводим в правой части мощности работающих вентиляторов
+    //      lcd.setCursor(11, 1);
+    //      for (int i = 1; i <= coilSpeedCurrent / 2; i++) {
+    //        lcd.print("\1");
+    //      }
+    //      if (fanSpeedCurrent % 2 != 0) { // напечатать половинку
+    //        lcd.print("\2");
+    //      }
+    //      for (int i = 1; i <= (fanSpeedMax - fanSpeedCurrent) / 2; i++) {
+    //        lcd.print(" ");
+    //      }
+    //
+    //    }
 
     // реле включения холодильника
 
@@ -640,7 +667,7 @@ int GetButtonNumberByValue(int value) {   // Новая функция по пр
 
 
 #ifdef DEBUGMODE
-//  Serial.println( value);
+  //  Serial.println( value);
 #endif
 
 
@@ -698,24 +725,26 @@ void EepromReadAll() { //считываем в переменные данные
 
   fanSpeedCurrent = EEPROM_byte_read(0);
   coilSpeedCurrent = EEPROM_byte_read(1);
-  destTemp = EEPROM_float_read(2);
-  destHumi = EEPROM_float_read(6);
-  hystTemp = EEPROM_float_read(10);
-  hystHumi = EEPROM_float_read(14);
-  minTimeOnOff = EEPROM_byte_read(18);
-  flagAutoSave = EEPROM_byte_read(19);
-  timeToExitMenu = EEPROM_byte_read(20);
+  conderserSpeedMin = EEPROM_byte_read(2);
+  destTemp = EEPROM_float_read(3);
+  destHumi = EEPROM_float_read(7);
+  hystTemp = EEPROM_float_read(11);
+  hystHumi = EEPROM_float_read(15);
+  minTimeOnOff = EEPROM_byte_read(19);
+  flagAutoSave = EEPROM_byte_read(20);
+  timeToExitMenu = EEPROM_byte_read(21);
 
 #else // если родная аардуина уно
   EEPROM.get(0, fanSpeedCurrent);
   EEPROM.get(1, coilSpeedCurrent);
-  EEPROM.get(2, destTemp);
-  EEPROM.get(6, destHumi);
-  EEPROM.get(10, hystTemp);
-  EEPROM.get(14, hystHumi);
-  EEPROM.get(18, minTimeOnOff);
-  EEPROM.get(19, flagAutoSave);
-  EEPROM.get(20, timeToExitMenu);
+  EEPROM.get(2, conderserSpeedMin);
+  EEPROM.get(3, destTemp);
+  EEPROM.get(7, destHumi);
+  EEPROM.get(11, hystTemp);
+  EEPROM.get(15, hystHumi);
+  EEPROM.get(19, minTimeOnOff);
+  EEPROM.get(20, flagAutoSave);
+  EEPROM.get(21, timeToExitMenu);
 
 #endif
 }
@@ -726,29 +755,32 @@ void EepromUpdateAll() { //записываем переменные в EEPROM, 
 
   EEPROM_byte_write(0, fanSpeedCurrent);
   EEPROM_byte_write(1, coilSpeedCurrent);
-  EEPROM_float_write(2, destTemp);
-  EEPROM_float_write(6, destHumi);
-  EEPROM_float_write(10, hystTemp);
-  EEPROM_float_write(14, hystHumi);
-  EEPROM_byte_write(18, minTimeOnOff);
-  EEPROM_byte_write(19, flagAutoSave);
-  EEPROM_byte_write(20, timeToExitMenu);
+  EEPROM_byte_write(2, conderserSpeedMin);
+  EEPROM_float_write(3, destTemp);
+  EEPROM_float_write(7, destHumi);
+  EEPROM_float_write(11, hystTemp);
+  EEPROM_float_write(15, hystHumi);
+  EEPROM_byte_write(19, minTimeOnOff);
+  EEPROM_byte_write(20, flagAutoSave);
+  EEPROM_byte_write(21, timeToExitMenu);
 
   EEPROM_byte_write(EEPROMLEN, EepromCheckCRC());
 #else
   EEPROM.put(0, fanSpeedCurrent);
   EEPROM.put(1, coilSpeedCurrent);
-  EEPROM.put(2, destTemp);
-  EEPROM.put(6, destHumi);
-  EEPROM.put(10, hystTemp);
-  EEPROM.put(14, hystHumi);
-  EEPROM.put(18, minTimeOnOff);
-  EEPROM.put(19, flagAutoSave);
-  EEPROM.put(20, timeToExitMenu);
+  EEPROM.put(2, conderserSpeedMin);
+  EEPROM.put(3, destTemp);
+  EEPROM.put(7, destHumi);
+  EEPROM.put(11, hystTemp);
+  EEPROM.put(15, hystHumi);
+  EEPROM.put(19, minTimeOnOff);
+  EEPROM.put(20, flagAutoSave);
+  EEPROM.put(21, timeToExitMenu);
 
   EEPROM.update(EEPROMLEN, EepromCheckCRC());
 #endif
 }
+
 
 void PrintSecondStringInMenu(byte value) { // функция вывода второй строки (значений в меню)
   switch (value) {
@@ -785,31 +817,47 @@ void PrintSecondStringInMenu(byte value) { // функция вывода вто
       }
       lcd.print("]");
       break;
-    case 2: // температурный режим
+          case 2: // минимальная скорость вентилятора испарителя
+      lcd.setCursor(2, 1);
+      lcd.print("[");
+      if (conderserSpeedMin == 0) {
+        lcd.print("OFF       ");
+      }
+      else {
+        for (int i = 1; i <= conderserSpeedMin; i++) {
+          lcd.print("\1");
+        }
+        for (int i = 1; i <= (conderserSpeedMinMax - conderserSpeedMin); i++) {
+          lcd.print(" ");
+        }
+      }
+      lcd.print("]");
+      break;
+    case 3: // температурный режим
       lcd.setCursor(5, 1);    lcd.print ((float)destTemp, 1);
       lcd.print (" C ");
       break;
-    case 3: // влажность
+    case 4: // влажность
       lcd.setCursor(5, 1);    lcd.print ((float)destHumi, 1);
       lcd.print (" % ");
       break;
-    case 4: // температурный гистерезис
+    case 5: // температурный гистерезис
       lcd.setCursor(5, 1);    lcd.print ((float)hystTemp, 1);
       lcd.print ("  ");
       break;
-    case 5: // влажность гистерезис
+    case 6: // влажность гистерезис
       lcd.setCursor(5, 1);    lcd.print ((float)hystHumi, 1);
       lcd.print ("  ");
       break;
-    case 6: // задержка реле
+    case 7: // задержка реле
       lcd.setCursor(5, 1);    lcd.print (minTimeOnOff);
       lcd.print (" min ");
       break;
-    case 7: //  время выхода из меню по таймауту, сек
+    case 8: //  время выхода из меню по таймауту, сек
       lcd.setCursor(5, 1);    lcd.print (timeToExitMenu);
-      lcd.print (" sec ");
+      lcd.print (" msec ");
       break;
-    case 8: //  автосохранение меню по таймауту,  без SELECT
+    case 9: //  автосохранение меню по таймауту,  без SELECT
       lcd.setCursor(6, 1);
       if (flagAutoSave) {
         lcd.print ("YES");
@@ -818,7 +866,7 @@ void PrintSecondStringInMenu(byte value) { // функция вывода вто
         lcd.print (" NO");
       }
       break;
-    case 9: // сброс EEPROM
+    case 10: // сброс EEPROM
       lcd.setCursor(6, 1);
       if (flagResetEEPROM) {
         lcd.print ("YES");
